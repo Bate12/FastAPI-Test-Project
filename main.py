@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import RedirectResponse, HTMLResponse
 from datetime import datetime
 from pydantic import BaseModel
@@ -78,17 +78,25 @@ def create_user(user: UserCreate):
         raise HTTPException(status_code=400, detail="Database error")
     
 
-# GET all users
+# GET all users or GET users 0 to limit, if limit < 0, raise 422 (assuming id starts at 0)
 @app.get("/users")
-def get_users():
+def get_users(limit: int | None = Query(default = None, ge = 0)):
     print("GET /users is Running")
     try:
         with engine.connect() as conn:
-            query = text("""
-                SELECT * FROM users_table
-            """)
+            if limit:
+                query = text("""
+                    SELECT * FROM users_table
+                    WHERE id < :limit
+                """)
+            else:
+                query = text("""
+                    SELECT * FROM users_table
+                """)
 
-            result = conn.execute(query)
+            result = conn.execute(query, {
+                "limit": limit
+            })
 
             raw_users = result.mappings().fetchall()
             users_data = []
