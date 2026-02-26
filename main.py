@@ -1,3 +1,4 @@
+# main.py
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import RedirectResponse, HTMLResponse
 from datetime import datetime
@@ -5,10 +6,18 @@ from pydantic import BaseModel
 from sqlalchemy import create_engine, text
 import json
 
-app = FastAPI(title="XAMPP API", version="1.0")
-engine = create_engine("mysql+pymysql://root:@127.0.0.1:3306/Users")
+# For script to run, type this windows command: "
+# python -m uvicorn main:app --reload
 
+app = FastAPI(title="XAMPP API", version="1.0")
+
+DB_NAME = "Project_Db"
+ADRESS = "mysql+pymysql://root:@127.0.0.1:3306/"
 USE_REDIRECT_DELAY = False
+
+engine = create_engine(f"{ADRESS}{DB_NAME}")
+
+
 class Color:
     ERROR = "\033[91m"
     SUCCESS = "\033[92m"
@@ -17,13 +26,13 @@ class Color:
 
 # class for handling creation
 class UserCreate(BaseModel):
-    name: str = "John Doe"
-    signup_ts: datetime | None = None
-    friends: list[int] = []
+    name: str = "John Pork"
+    friends: list[int | str] = []
 
 # class for handling responses
 class UserResponse (UserCreate):
     id: int
+    signup_ts: datetime | None = None
 
 
 # GET endpoint to check if the server is running
@@ -38,7 +47,7 @@ def read_root():
 
 # A POST endpoint to receive user data
 @app.post("/users/create")
-def create_user(user: UserCreate):
+def post_user(user: UserCreate):
     print("POST /users/create is Running")
     try:
         with engine.connect() as conn:
@@ -61,7 +70,7 @@ def create_user(user: UserCreate):
             
             result = conn.execute(query, { 
                 "name": user.name, 
-                "signup_ts": user.signup_ts, 
+                "signup_ts": datetime.now(), 
                 "friends": friends_str
             })
             conn.commit()
@@ -80,7 +89,7 @@ def create_user(user: UserCreate):
 
 # GET all users or GET users 0 to limit, if limit < 0, raise 422 (assuming id starts at 0)
 @app.get("/users")
-def get_users(limit: int | None = Query(default = None, ge = 0)):
+def get_users(limit: int | None = Query(default = None, g = 0)):
     print("GET /users is Running")
     try:
         with engine.connect() as conn:
@@ -99,6 +108,21 @@ def get_users(limit: int | None = Query(default = None, ge = 0)):
             })
 
             raw_users = result.mappings().fetchall()
+            print(f"raw_users = {raw_users}")
+
+            """
+
+            [
+                {'id': 1,
+                 'name': 'John Doe', 
+                 'signup_ts': datetime.datetime(2026, 2, 24, 11, 9, 5),
+                   'friends': '[1]'},
+
+                {'id': 2, 'name': 'Jeffery Epstein', 'signup_ts': datetime.datetime(2015, 2, 24, 11, 9, 5), 'friends': '[]'}
+            ]
+
+            """
+
             users_data = []
             for row in raw_users:
                 user_dict = dict(row)
@@ -140,7 +164,7 @@ def get_user(id : int):
             if user_data.get("friends"):
                 user_data["friends"] = json.loads(user_data["friends"])
 
-            print(f"\n{Color.SUCCESS}GET Request success, found user: {user_data["id"]} - {user_data["name"]} {Color.STOP}")
+            print(f"\n{Color.SUCCESS}GET Request success, found user: {user_data['id']} - {user_data['name']} {Color.STOP}")
             
             return user_data
 
@@ -149,7 +173,40 @@ def get_user(id : int):
     except Exception as e:
         print(f"\n{Color.ERROR}GET USER BY ID ERROR > \n{e}{Color.STOP}")
         raise HTTPException(status_code=500, detail="Database error")
+    
 
+# GET /users/get_friends/{id} to get friend ids and friends, or even to save their User object
+@app.get("/users/get_friends/{id}")
+def get_friends(id: int):
+    print("GET /users/get_friends/{id} is Running")
+    try:
+        with engine.connect() as conn:
+            query = text("""
+            SELECT * FROM users_table
+            WHERE id = :id
+            """)
+
+            result = conn.execute(query, {
+                "id": id
+            })
+            row = result.mappings().fetchone()
+
+            if not row:
+                raise HTTPException(status_code=404, detail="User not found")
+            
+            user_data = dict(row)
+            friend_ids = []
+            if user_data.get("friends"):
+                friend_ids = json.loads(user_data["friends"])
+
+            print(f"\n{Color.SUCCESS}GET Request success, found {len(friend_ids)} friends for user: {id} {Color.STOP}")
+            return {"friend_ids": friend_ids}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"\n{Color.ERROR}GET FRIENDS User BY ID ERROR > \n{e}{Color.STOP}")
+        raise HTTPException(status_code=500, detail="Database error")
     
 # DELETE a user by id
 @app.delete("/users/{id}")
